@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOG Ayıklama Sistemi</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1><i class="fas fa-file-search"></i> LOG Ayıklama Sistemi</h1>
+            <p>Dosya arama ve combo ayıklama işlemlerinizi güvenli şekilde gerçekleştirin</p>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs">
+            <button class="tab-btn active" data-tab="file-search">
+                <i class="fas fa-search"></i> Dosya Arama
+            </button>
+            <button class="tab-btn" data-tab="combo-extractor">
+                <i class="fas fa-filter"></i> Combo Ayıklayıcı
+            </button>
+        </nav>
+
+        <!-- File Search Section -->
+        <section id="file-search" class="tab-content active">
+            <div class="card">
+                <div class="card-header">
+                    <h2><i class="fas fa-file-search"></i> Dosya Arama</h2>
+                </div>
+                <div class="card-body">
+                    <div class="settings-row">
+                        <label for="maxResults">Maksimum Sonuç:</label>
+                        <select id="maxResults" class="select-input">
+                            <option value="1000">1000</option>
+                            <option value="2000">2000</option>
+                            <option value="5000">5000</option>
+                            <option value="10000">10000</option>
+                            <option value="unlimited">Limitsiz</option>
+                        </select>
+                    </div>
+
+                    <div class="file-upload-area" id="searchFileUpload">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Dosyaları sürükleyin veya seçmek için tıklayın</p>
+                        <small>İstediğiniz kadar dosya yükleyebilirsiniz (.txt, .log, .csv)</small>
+                        <input type="file" id="searchFileInput" multiple accept=".txt,.log,.csv">
+                    </div>
+
+                    <div class="uploaded-files" id="uploadedFiles" style="display: none;">
+                        <h4><i class="fas fa-files"></i> Yüklenen Dosyalar</h4>
+                        <div class="file-list" id="fileList"></div>
+                        <div class="file-stats">
+                            <span class="total-files">Toplam: <strong id="totalFiles">0</strong> dosya</span>
+                            <span class="total-size">Boyut: <strong id="totalSize">0 KB</strong></span>
+                            <span class="total-lines">Satır: <strong id="totalLinesCount">0</strong></span>
+                        </div>
+                        <button id="clearFilesBtn" class="btn btn-secondary">
+                            <i class="fas fa-trash"></i> Dosyaları Temizle
+                        </button>
+                    </div>
+
+                    <div class="search-controls">
+                        <div class="input-group">
+                            <input type="text" id="searchTerm" placeholder="Arama terimi girin...">
+                            <button id="searchBtn" class="btn btn-primary">
+                                <i class="fas fa-search"></i> Ara
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="results-section" id="searchResults" style="display: none;">
+                        <div class="results-header">
+                            <h3>Arama Sonuçları</h3>
+                            <div class="results-controls">
+                                <div class="search-filter">
+                                    <input type="text" id="searchFilterInput" placeholder="Sonuçlarda ara...">
+                                    <button id="clearSearchFilterBtn" class="btn-clear" title="Filtreyi temizle">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <button id="downloadSearchResults" class="btn btn-success">
+                                    <i class="fas fa-download"></i> Sonuçları İndir
+                                </button>
+                            </div>
+                        </div>
+                        <div class="results-content" id="searchResultsContent"></div>
+                        <div class="results-stats">
+                            <span id="searchResultsCount">0 sonuç bulundu</span>
+                            <span id="searchFilteredCount" style="display: none;"> | <span id="searchFilteredNumber">0</span> gösteriliyor</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Combo Extractor Section -->
+        <section id="combo-extractor" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2><i class="fas fa-filter"></i> Combo Ayıklayıcı</h2>
+                </div>
+                <div class="card-body">
+                    <div class="format-selector">
+                        <label>Format:</label>
+                        <div class="format-options">
+                            <label class="radio-option">
+                                <input type="radio" name="format" value="URL:PASS" checked>
+                                <span>URL:PASS</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="format" value="MAIL:PASS">
+                                <span>MAIL:PASS</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="format" value="USERNAME:PASS">
+                                <span>USERNAME:PASS</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="format" value="USER:PASS">
+                                <span>USER:PASS</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="format" value="URL:MAIL:PASS">
+                                <span>URL:MAIL:PASS</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="file-upload-area" id="comboFileUpload">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Combo dosyasını sürükleyin veya seçmek için tıklayın</p>
+                        <input type="file" id="comboFileInput" accept=".txt,.log,.csv">
+                    </div>
+
+                    <div class="text-input-section">
+                        <label for="comboTextInput">veya aşağıdaki metin kutusuna doğrudan yapıştırın:</label>
+                        <textarea id="comboTextInput" placeholder="Combo verilerinizi buraya yapıştırın..."></textarea>
+                    </div>
+
+                    <div class="combo-controls">
+                        <button id="extractBtn" class="btn btn-primary">
+                            <i class="fas fa-filter"></i> Ayıkla
+                        </button>
+                        <button id="downloadComboResults" class="btn btn-success" style="display: none;">
+                            <i class="fas fa-download"></i> Sonuçları İndir
+                        </button>
+                    </div>
+
+                    <div class="stats-row">
+                        <div class="stat-item">
+                            <div class="stat-number" id="totalLines">0</div>
+                            <div class="stat-label">Toplam Satır</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-number" id="extractedCombos">0</div>
+                            <div class="stat-label">Ayıklanan Combo</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-number" id="successRate">0%</div>
+                            <div class="stat-label">Başarı Oranı</div>
+                        </div>
+                    </div>
+
+                    <div class="results-section" id="comboResults" style="display: none;">
+                        <div class="results-header">
+                            <h3>Ayıklanan Combolar</h3>
+                            <div class="results-controls">
+                                <div class="search-filter">
+                                    <input type="text" id="comboFilterInput" placeholder="Sonuçlarda ara...">
+                                    <button id="clearFilterBtn" class="btn-clear" title="Filtreyi temizle">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="filter-stats">
+                                    <span id="filteredCount">0</span> / <span id="totalComboCount">0</span> gösteriliyor
+                                </div>
+                            </div>
+                        </div>
+                        <div class="results-content" id="comboResultsContent"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <p id="loadingText">İşleniyor...</p>
+                <div class="progress-container" id="progressContainer" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span id="progressText">0%</span>
+                        <span id="progressDetails">0 / 0 işlendi</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
