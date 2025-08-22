@@ -170,11 +170,24 @@ function handleComboFileSelect(e) {
 
 // Process search files
 async function processSearchFiles(files) {
-    showLoadingWithProgress('Dosyalar yükleniyor...');
+    // Check total file size limit (5 GB = 5 * 1024 * 1024 * 1024 bytes)
+    const MAX_TOTAL_SIZE = 5 * 1024 * 1024 * 1024; // 5 GB
+    let totalSize = 0;
+    for (const file of files) {
+        totalSize += file.size;
+    }
+
+    if (totalSize > MAX_TOTAL_SIZE) {
+        alert(`⚠️ Toplam dosya boyutu ${formatFileSize(totalSize)} olarak ${formatFileSize(MAX_TOTAL_SIZE)} sınırını aşıyor.\n\nLütfen daha küçük dosyalar seçin veya dosya sayısını azaltın.`);
+        return;
+    }
+
+    showLoadingWithProgress(`Dosyalar yükleniyor... (${formatFileSize(totalSize)})`);
     
     try {
         let processedFiles = 0;
         const totalFiles = files.length;
+        let processedSize = 0;
         
         for (const file of files) {
             try {
@@ -190,13 +203,15 @@ async function processSearchFiles(files) {
                 });
                 
                 processedFiles++;
+                processedSize += file.size;
                 
                 // Update progress
                 const progress = Math.floor((processedFiles / totalFiles) * 100);
-                updateProgress(progress, processedFiles, totalFiles);
+                updateProgress(progress, processedFiles, totalFiles, `${formatFileSize(processedSize)} / ${formatFileSize(totalSize)}`);
                 
-                // Allow UI to update
-                await new Promise(resolve => setTimeout(resolve, 10));
+                // Allow UI to update - longer delay for large files
+                const delay = file.size > 50 * 1024 * 1024 ? 50 : 10; // 50ms for files > 50MB
+                await new Promise(resolve => setTimeout(resolve, delay));
                 
             } catch (fileError) {
                 console.error(`Error processing file ${file.name}:`, fileError);
@@ -215,7 +230,15 @@ async function processSearchFiles(files) {
 
 // Process combo file
 async function processComboFile(file) {
-    showLoading();
+    // Check file size limit (5 GB)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5 GB
+    
+    if (file.size > MAX_FILE_SIZE) {
+        alert(`⚠️ Dosya boyutu ${formatFileSize(file.size)} olarak ${formatFileSize(MAX_FILE_SIZE)} sınırını aşıyor.\n\nLütfen daha küçük bir dosya seçin.`);
+        return;
+    }
+
+    showLoading(`Combo dosyası yükleniyor... (${formatFileSize(file.size)})`);
     try {
         const content = await readFileContent(file);
         comboTextInput.value = content;
@@ -786,10 +809,15 @@ function showLoadingWithProgress(text) {
     loadingOverlay.style.display = 'flex';
 }
 
-function updateProgress(percentage, processed, total) {
+function updateProgress(percentage, processed, total, extraInfo = '') {
     progressFill.style.width = `${percentage}%`;
     progressText.textContent = `${percentage}%`;
-    progressDetails.textContent = `${processed.toLocaleString()} / ${total.toLocaleString()} işlendi`;
+    
+    if (extraInfo) {
+        progressDetails.textContent = `${processed.toLocaleString()} / ${total.toLocaleString()} işlendi - ${extraInfo}`;
+    } else {
+        progressDetails.textContent = `${processed.toLocaleString()} / ${total.toLocaleString()} işlendi`;
+    }
 }
 
 function hideLoading() {
