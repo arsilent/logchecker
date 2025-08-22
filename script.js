@@ -48,6 +48,7 @@ const comboFilterInput = document.getElementById('comboFilterInput');
 const clearFilterBtn = document.getElementById('clearFilterBtn');
 const filteredCount = document.getElementById('filteredCount');
 const totalComboCount = document.getElementById('totalComboCount');
+const useAI = document.getElementById('useAI');
 
 // Search Filter Elements
 const searchFilterInput = document.getElementById('searchFilterInput');
@@ -405,7 +406,7 @@ function downloadSearchResultsFile() {
     downloadFile(content, filename, 'text/plain');
 }
 
-// Perform combo extraction
+// Perform combo extraction with AI or local method
 async function performComboExtraction() {
     const content = comboTextInput.value.trim();
     if (!content) {
@@ -413,46 +414,104 @@ async function performComboExtraction() {
         return;
     }
 
-    showLoadingWithProgress('Combolar ayıklanıyor...');
+    const selectedFormat = document.querySelector('input[name="format"]:checked').value;
+    const useAIExtraction = useAI.checked;
+    
+    if (useAIExtraction) {
+        showLoadingWithProgress('AI ile combolar ayıklanıyor...');
+    } else {
+        showLoadingWithProgress('Combolar ayıklanıyor...');
+    }
 
     try {
         const lines = content.split('\n').map(line => line.trim()).filter(line => line);
-        const selectedFormat = document.querySelector('input[name="format"]:checked').value;
+        const totalLines = lines.length;
         
         comboResults = [];
         const comboSet = new Set(); // For duplicate detection
         
-        // Dynamic chunk size based on total lines
-        const totalLines = lines.length;
-        const chunkSize = Math.max(50, Math.floor(totalLines / 100)); // Smaller chunks for better progress
-        let processedLines = 0;
+        if (useAIExtraction) {
+            // AI-powered extraction
+            const chunkSize = Math.min(15, Math.max(5, Math.floor(totalLines / 40))); // Even smaller chunks for better accuracy
+            let processedLines = 0;
 
-        for (let i = 0; i < lines.length; i += chunkSize) {
-            const chunk = lines.slice(i, Math.min(i + chunkSize, lines.length));
-            
-            // Process each line in the chunk
-            for (const line of chunk) {
-                const extracted = extractComboFromLine(line, selectedFormat);
-                if (extracted) {
-                    // Check for duplicates
-                    const normalizedCombo = extracted.toLowerCase().trim();
-                    if (!comboSet.has(normalizedCombo)) {
-                        comboSet.add(normalizedCombo);
-                        comboResults.push(extracted);
+            for (let i = 0; i < lines.length; i += chunkSize) {
+                const chunk = lines.slice(i, Math.min(i + chunkSize, lines.length));
+                
+                try {
+                    // Call AI API for this chunk
+                    const aiResults = await extractComboWithAI(chunk, selectedFormat);
+                    
+                    // Process AI results
+                    if (aiResults && Array.isArray(aiResults)) {
+                        for (const extracted of aiResults) {
+                            if (extracted && typeof extracted === 'string') {
+                                // Check for duplicates
+                                const normalizedCombo = extracted.toLowerCase().trim();
+                                if (!comboSet.has(normalizedCombo)) {
+                                    comboSet.add(normalizedCombo);
+                                    comboResults.push(extracted);
+                                }
+                            }
+                        }
+                    }
+                } catch (apiError) {
+                    console.error('AI API error for chunk:', apiError);
+                    // Fallback to local extraction for this chunk
+                    for (const line of chunk) {
+                        const extracted = extractComboFromLine(line, selectedFormat);
+                        if (extracted) {
+                            const normalizedCombo = extracted.toLowerCase().trim();
+                            if (!comboSet.has(normalizedCombo)) {
+                                comboSet.add(normalizedCombo);
+                                comboResults.push(extracted);
+                            }
+                        }
                     }
                 }
+                
+                processedLines += chunk.length;
+                
+                // Update progress
+                const progress = Math.floor((processedLines / totalLines) * 100);
+                updateProgress(progress, processedLines, totalLines);
+                updateComboStats(totalLines, comboResults.length);
+                
+                // Allow UI to update and prevent API rate limiting
+                await new Promise(resolve => setTimeout(resolve, 800)); // 800ms delay for API calls
             }
-            
-            processedLines += chunk.length;
-            
-            // Update progress
-            const progress = Math.floor((processedLines / totalLines) * 100);
-            updateProgress(progress, processedLines, totalLines);
-            updateComboStats(totalLines, comboResults.length);
-            
-            // Allow UI to update - adaptive delay based on file size
-            const delay = totalLines > 100000 ? 10 : totalLines > 50000 ? 5 : 2;
-            await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+            // Local extraction (original method)
+            const chunkSize = Math.max(50, Math.floor(totalLines / 100));
+            let processedLines = 0;
+
+            for (let i = 0; i < lines.length; i += chunkSize) {
+                const chunk = lines.slice(i, Math.min(i + chunkSize, lines.length));
+                
+                // Process each line in the chunk
+                for (const line of chunk) {
+                    const extracted = extractComboFromLine(line, selectedFormat);
+                    if (extracted) {
+                        // Check for duplicates
+                        const normalizedCombo = extracted.toLowerCase().trim();
+                        if (!comboSet.has(normalizedCombo)) {
+                            comboSet.add(normalizedCombo);
+                            comboResults.push(extracted);
+                        }
+                    }
+                }
+                
+                processedLines += chunk.length;
+                
+                // Update progress
+                const progress = Math.floor((processedLines / totalLines) * 100);
+                updateProgress(progress, processedLines, totalLines);
+                updateComboStats(totalLines, comboResults.length);
+                
+                // Allow UI to update - adaptive delay based on file size
+                const delay = totalLines > 100000 ? 10 : totalLines > 50000 ? 5 : 2;
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
         }
 
         // Store unique results
@@ -467,136 +526,166 @@ async function performComboExtraction() {
     }
 }
 
-// Extract combo from line based on format
+// ADVANCED LOCAL COMBO EXTRACTION - NO AI NEEDED
 function extractComboFromLine(line, format) {
     if (!line || line.trim().length === 0) return null;
     
-    // Remove file info brackets if present (e.g., [filename:linenumber])
-    let cleanLine = line.replace(/^\[.*?\]\s*/, '').trim();
+    let cleaned = line.trim();
     
-    if (!cleanLine) return null;
+    // Agresif satır numarası ve bracket temizleme
+    cleaned = cleaned.replace(/^\[\d+\]\s*:?\s*/, ''); // [123456]: 
+    cleaned = cleaned.replace(/^\d+\]\s*:?\s*/, ''); // 123456]:
+    cleaned = cleaned.replace(/^\d+:\s*/, ''); // 123456:
+    cleaned = cleaned.replace(/^\d+\s+/, ''); // 123456 space
+    cleaned = cleaned.replace(/^\[.*?\]\s*/, ''); // [anything]
     
-    // More comprehensive separator handling
-    cleanLine = cleanLine.replace(/[|;,\t\s]+/g, ':');
+    if (!cleaned || cleaned.length < 5) return null;
+    if (!cleaned.includes(':')) return null;
     
-    // Extract URLs, emails, and potential passwords using improved regex
-    const urlRegex = /https?:\/\/[^\s:;|,\t]+/gi;
-    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
-    
-    const urls = cleanLine.match(urlRegex) || [];
-    const emails = cleanLine.match(emailRegex) || [];
-    
-    // Split by separators and clean empty parts
-    const allParts = cleanLine.split(/[:]+/).filter(part => {
-        const trimmed = part.trim();
-        return trimmed.length > 0 && !trimmed.match(/^\[.*\]$/);
-    });
-    
-    if (allParts.length < 2) return null;
-    
-    // Find potential passwords - more robust detection
-    let passwords = [];
-    for (const part of allParts) {
-        const trimmed = part.trim();
-        if (trimmed.length >= 2 && 
-            !isValidUrl(trimmed) && 
-            !isValidEmail(trimmed) && 
-            !trimmed.match(/^\[.*\]$/) && // Not bracket content
-            !trimmed.match(/^(http|https|www|com|org|net|edu|gov)$/i) && // Not common web terms
-            trimmed.match(/^[A-Za-z0-9@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?!~`]+$/)) {
-            passwords.push(trimmed);
-        }
-    }
+    const parts = cleaned.split(':').map(p => p.trim()).filter(p => p.length > 0);
+    if (parts.length < 2) return null;
 
     switch (format) {
         case 'URL:PASS':
-            // Try exact URL matches first
-            if (urls.length > 0) {
-                const urlPart = urls[0];
-                // Find password after URL
-                const urlIndex = allParts.findIndex(part => part.includes(urlPart.replace('https://', '').replace('http://', '')));
-                if (urlIndex >= 0 && urlIndex < allParts.length - 1) {
-                    return `${urlPart}:${allParts[urlIndex + 1].trim()}`;
-                }
-                // Fallback to last password
-                if (passwords.length > 0) {
-                    return `${urlPart}:${passwords[passwords.length - 1]}`;
-                }
-            }
-            
-            // Fallback: look for domain-like patterns
-            for (let i = 0; i < allParts.length - 1; i++) {
-                const part = allParts[i].trim();
-                if (isValidUrl(part) || isDomainLike(part)) {
-                    return `${part}:${allParts[i + 1].trim()}`;
-                }
-            }
-            break;
+            return extractUrlPass(parts);
             
         case 'MAIL:PASS':
-            // Try exact email matches first
-            if (emails.length > 0) {
-                const emailPart = emails[0];
-                // Find password after email
-                const emailIndex = allParts.findIndex(part => part.includes(emailPart));
-                if (emailIndex >= 0 && emailIndex < allParts.length - 1) {
-                    return `${emailPart}:${allParts[emailIndex + 1].trim()}`;
-                }
-                // Fallback to last password
-                if (passwords.length > 0) {
-                    return `${emailPart}:${passwords[passwords.length - 1]}`;
-                }
-            }
-            
-            // Fallback: look for email patterns
-            for (let i = 0; i < allParts.length - 1; i++) {
-                const part = allParts[i].trim();
-                if (isValidEmail(part)) {
-                    return `${part}:${allParts[i + 1].trim()}`;
-                }
-            }
-            break;
+            return extractMailPass(parts);
             
         case 'USERNAME:PASS':
         case 'USER:PASS':
-            // Look for username patterns (not URL or email)
-            for (let i = 0; i < allParts.length - 1; i++) {
-                const part = allParts[i].trim();
-                if (!isValidUrl(part) && !isValidEmail(part) && part.length >= 2) {
-                    return `${part}:${allParts[i + 1].trim()}`;
-                }
-            }
-            break;
+            return extractUsernamePass(parts, cleaned);
             
         case 'URL:MAIL:PASS':
-            let foundUrl = null, foundEmail = null, foundPassword = null;
-            
-            // First pass: find exact matches
-            if (urls.length > 0) foundUrl = urls[0];
-            if (emails.length > 0) foundEmail = emails[0];
-            if (passwords.length > 0) foundPassword = passwords[passwords.length - 1];
-            
-            // Second pass: find in order from parts
-            if (!foundUrl || !foundEmail || !foundPassword) {
-                for (const part of allParts) {
-                    const trimmed = part.trim();
-                    if (!foundUrl && (isValidUrl(trimmed) || isDomainLike(trimmed))) {
-                        foundUrl = trimmed;
-                    } else if (!foundEmail && isValidEmail(trimmed)) {
-                        foundEmail = trimmed;
-                    } else if (!foundPassword && trimmed.length >= 2 && 
-                              !isValidUrl(trimmed) && !isValidEmail(trimmed)) {
-                        foundPassword = trimmed;
-                    }
-                }
-            }
-            
-            if (foundUrl && foundEmail && foundPassword) {
-                return `${foundUrl}:${foundEmail}:${foundPassword}`;
-            }
-            break;
+            return extractUrlMailPass(parts);
     }
     return null;
+}
+
+// URL:PASS extraction
+function extractUrlPass(parts) {
+    for (let i = 0; i < parts.length - 1; i++) {
+        const url = parts[i];
+        const pass = parts[i+1];
+        
+        if (isValidUrlForExtraction(url) && pass.length > 0) {
+            return `${url}:${pass}`;
+        }
+    }
+    return null;
+}
+
+// MAIL:PASS extraction  
+function extractMailPass(parts) {
+    for (let i = 0; i < parts.length - 1; i++) {
+        const email = parts[i];
+        const pass = parts[i+1];
+        
+        if (email.includes('@') && email.includes('.') && 
+            email.split('@').length === 2 && pass.length > 0) {
+            return `${email}:${pass}`;
+        }
+    }
+    return null;
+}
+
+// USERNAME:PASS extraction - SUPER STRICT
+function extractUsernamePass(parts, originalLine) {
+    for (let i = 0; i < parts.length - 1; i++) {
+        const username = parts[i];
+        const password = parts[i+1];
+        
+        // STRICT USERNAME VALIDATION
+        if (isValidUsername(username, originalLine) && password.length > 0) {
+            return `${username}:${password}`;
+        }
+    }
+    return null;
+}
+
+// URL:MAIL:PASS extraction
+function extractUrlMailPass(parts) {
+    if (parts.length < 3) return null;
+    
+    for (let i = 0; i < parts.length - 2; i++) {
+        const url = parts[i];
+        const email = parts[i+1];
+        const pass = parts[i+2];
+        
+        if (isValidUrlForExtraction(url) && 
+            email.includes('@') && email.includes('.') && 
+            pass.length > 0) {
+            return `${url}:${email}:${pass}`;
+        }
+    }
+    return null;
+}
+
+// SUPER STRICT username validation
+function isValidUsername(username, originalLine) {
+    if (!username || username.length < 2 || username.length > 25) return false;
+    
+    // ABSOLUTE REJECTIONS for USERNAME format
+    if (username.includes('@')) return false;  // Email
+    if (username.startsWith('http')) return false;  // URL
+    if (username.includes('//')) return false;  // URL
+    if (username.includes('/')) return false;  // Path
+    if (username.includes('www.')) return false;  // WWW
+    if (username.includes('.com')) return false;  // Domain
+    if (username.includes('.org')) return false;  // Domain
+    if (username.includes('.net')) return false;  // Domain
+    if (username.includes('.edu')) return false;  // Domain
+    if (username.includes('.gov')) return false;  // Domain
+    if (username.includes('.co.')) return false;  // Domain
+    if (username.includes('cart.')) return false;  // Specific domain
+    if (username.includes('godaddy')) return false;  // Specific domain
+    if (username.includes('checkout')) return false;  // URL path
+    if (username.includes('account')) return false;  // URL path
+    
+    // Check if it's a domain pattern (word.word.word)
+    if (username.includes('.')) {
+        const dotParts = username.split('.');
+        if (dotParts.length >= 2) {
+            const lastPart = dotParts[dotParts.length - 1].toLowerCase();
+            // Common TLDs - reject if looks like domain
+            const tlds = ['com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'co', 'uk', 'de', 'fr', 'jp', 'cn', 'ru', 'br', 'au', 'ca', 'mx', 'in', 'kr', 'it', 'es', 'nl', 'pl', 'se', 'no', 'dk', 'fi', 'be', 'ch', 'at', 'ie', 'pt', 'gr', 'cz', 'hu', 'ro', 'bg', 'hr', 'sk', 'si', 'lt', 'lv', 'ee', 'is', 'mt', 'lu', 'cy'];
+            if (tlds.includes(lastPart)) return false;
+            
+            // If multiple dots and looks domain-like, reject
+            if (dotParts.length >= 3) return false;
+        }
+    }
+    
+    // Check original line for URL indicators
+    if (originalLine.includes('https://') || originalLine.includes('http://')) {
+        // If line contains URLs, be extra careful
+        if (username.includes('.')) return false;
+    }
+    
+    // Valid username patterns (letters, numbers, common symbols)
+    if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
+        // Allow some special chars but not URL chars
+        if (username.includes('<') || username.includes('>') || 
+            username.includes('[') || username.includes(']')) return false;
+    }
+    
+    return true;
+}
+
+// URL validation for extraction
+function isValidUrlForExtraction(url) {
+    if (!url || url.length < 4) return false;
+    
+    // Must contain dot for domain
+    if (!url.includes('.')) return false;
+    
+    // Should not be email
+    if (url.includes('@')) return false;
+    
+    // Should look like URL/domain
+    return url.includes('.com') || url.includes('.org') || url.includes('.net') || 
+           url.includes('.edu') || url.includes('.gov') || url.startsWith('http') ||
+           url.includes('/') || /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(url);
 }
 
 // Validation functions
@@ -868,6 +957,231 @@ function clearAllFiles() {
 }
 
 
+
+// AI-powered combo extraction
+async function extractComboWithAI(lines, format) {
+    try {
+        // Prepare the prompt for AI
+        const formatDescriptions = {
+            'URL:PASS': 'URL ve şifre formatında (örnek: https://site.com:password123)',
+            'MAIL:PASS': 'Email ve şifre formatında (örnek: user@domain.com:password123)', 
+            'USERNAME:PASS': 'Kullanıcı adı ve şifre formatında (örnek: username:password123)',
+            'USER:PASS': 'Kullanıcı adı ve şifre formatında (örnek: user:password123)',
+            'URL:MAIL:PASS': 'URL, email ve şifre formatında (örnek: https://site.com:user@domain.com:password123)'
+        };
+
+        // Satırları agresif şekilde temizle ve analiz et
+        const processedData = [];
+        
+        for (const line of lines) {
+            let cleaned = line.trim();
+            
+            // Tüm olası satır numarası formatlarını temizle
+            cleaned = cleaned.replace(/^\[\d+\]\s*:?\s*/, ''); // [123456]: 
+            cleaned = cleaned.replace(/^\d+\]\s*:?\s*/, ''); // 123456]:
+            cleaned = cleaned.replace(/^\d+:\s*/, ''); // 123456:
+            cleaned = cleaned.replace(/^\d+\s+/, ''); // 123456 space
+            
+            if (!cleaned || cleaned.length < 5) continue;
+            if (!cleaned.includes(':')) continue;
+            
+            // Format-specific extraction
+            if (format === 'URL:PASS') {
+                // URL:PASS için - domain veya http içeren kısımları bul
+                if (cleaned.includes('.') && cleaned.split(':').length >= 2) {
+                    const parts = cleaned.split(':');
+                    if (parts[0].includes('.') && parts[1] && parts[1].trim().length > 0) {
+                        processedData.push(`${parts[0]}:${parts[1]}`);
+                    }
+                }
+            } else if (format === 'MAIL:PASS') {
+                // MAIL:PASS için - @ içeren kısımları bul
+                if (cleaned.includes('@') && cleaned.split(':').length >= 2) {
+                    const parts = cleaned.split(':');
+                    if (parts[0].includes('@') && parts[1] && parts[1].trim().length > 0) {
+                        processedData.push(`${parts[0]}:${parts[1]}`);
+                    }
+                }
+                         } else if (format === 'USERNAME:PASS' || format === 'USER:PASS') {
+                 // USERNAME:PASS için - username:password formatını al
+                 const parts = cleaned.split(':');
+                 if (parts.length >= 2 && parts[0] && parts[1]) {
+                     // URL ve email olmayan kullanıcı adlarını al
+                     const username = parts[0].trim();
+                     const password = parts[1].trim();
+                     
+                     // Basit username kontrolü - URL veya email değilse al
+                     if (!username.includes('@') && 
+                         !username.startsWith('http') && 
+                         !username.includes('/') &&
+                         username.length > 2 && username.length < 30 &&
+                         password.length > 0) {
+                         
+                         // Eğer username'de domain var ama başka işaretler yoksa al
+                         if (username.includes('.')) {
+                             // Sadece domain.com gibi basit domain'leri reddet
+                             if (!username.match(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)) {
+                                 processedData.push(`${username}:${password}`);
+                             }
+                         } else {
+                             // Nokta içermeyenler kesinlikle username
+                             processedData.push(`${username}:${password}`);
+                         }
+                     }
+                 }
+            } else if (format === 'URL:MAIL:PASS') {
+                // URL:MAIL:PASS için - 3 parça olmalı
+                const parts = cleaned.split(':');
+                if (parts.length >= 3 && parts[0].includes('.') && parts[1].includes('@')) {
+                    processedData.push(`${parts[0]}:${parts[1]}:${parts[2]}`);
+                }
+            }
+        }
+
+                 const prompt = `Bu log verilerinden SADECE ${format} formatında temiz kombinasyonları çıkar.
+
+MUTLAK KURALLAR:
+1. ASLA satır numarası ekleme (123456]: gibi)
+2. ASLA köşeli parantez ekleme [123456]
+3. SADECE ${format} formatında sonuç ver
+4. Geçersiz verileri atla
+
+${format === 'URL:PASS' ? 'İSTENEN: site.com:password şeklinde - URL içeren' : 
+  format === 'MAIL:PASS' ? 'İSTENEN: email@domain.com:password şeklinde - @ içeren' :
+  format === 'USERNAME:PASS' || format === 'USER:PASS' ? 'İSTENEN: kullanici:sifre şeklinde - URL değil, email değil, sadece username' :
+  'İSTENEN: site.com:email@domain.com:password şeklinde'}
+
+${format === 'USERNAME:PASS' || format === 'USER:PASS' ? 
+  'YASAKLI: https, http, .com, .org, cart., www, / içeren hiçbir şey alma!' : ''}
+
+VERİ:
+${processedData.slice(0, 10).join('\n')}
+
+CEVAP: JSON array ["combo1", "combo2"]`;
+
+        const response = await fetch('https://api.ashlynn-repo.tech/chat/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                question: prompt,
+                model: 'gpt-4o-mini'
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.status === 200 && data.successful === 'success') {
+            try {
+                // AI response'u parse et
+                let aiResponse = data.response.trim();
+                // console.log('AI Response:', aiResponse); // Debug için
+                
+                // JSON array'i bul ve parse et
+                const jsonMatch = aiResponse.match(/\[[\s\S]*?\]/);
+                if (jsonMatch) {
+                    const parsedResults = JSON.parse(jsonMatch[0]);
+                    if (Array.isArray(parsedResults)) {
+                        // Sonuçları temizle ve filtrele
+                        const cleanResults = parsedResults
+                            .filter(item => typeof item === 'string' && item.trim().length > 0)
+                            .map(item => {
+                                // Tüm temizleme işlemlerini yap
+                                let cleaned = item.trim();
+                                // Satır numaralarını temizle
+                                cleaned = cleaned.replace(/^\[\d+\]\s*:?\s*/, ''); // [123456]: 
+                                cleaned = cleaned.replace(/^\d+\]\s*:?\s*/, ''); // 123456]:
+                                cleaned = cleaned.replace(/^\d+:\s*/, ''); // 123456:
+                                cleaned = cleaned.replace(/^["'\s]+|["'\s]+$/g, ''); // Tırnak ve boşluk
+                                return cleaned;
+                            })
+                            .filter(item => {
+                                if (!item || item.length === 0) return false;
+                                if (!item.includes(':')) return false; // : içermeyenler
+                                if (item.match(/^\d+/)) return false; // Sayı ile başlayanlar
+                                if (item.includes('[') || item.includes(']')) return false; // Köşeli parantez
+                                if (item.match(/^https?$/)) return false; // Sadece protokol
+                                
+                                // Format kontrolü
+                                const parts = item.split(':');
+                                if (format === 'URL:PASS') {
+                                    return parts.length >= 2 && (parts[0].includes('.') || parts[0].startsWith('http'));
+                                } else if (format === 'MAIL:PASS') {
+                                    return parts.length >= 2 && parts[0].includes('@') && parts[0].includes('.');
+                                } else if (format === 'USERNAME:PASS' || format === 'USER:PASS') {
+                                    return parts.length >= 2 && !parts[0].includes('@') && !parts[0].includes('.');
+                                } else if (format === 'URL:MAIL:PASS') {
+                                    return parts.length >= 3;
+                                }
+                                return parts.length >= 2;
+                            });
+                        
+                        return cleanResults;
+                    }
+                }
+                
+                // JSON parse başarısız olursa, manuel parsing
+                const lines = aiResponse.split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0);
+                
+                const cleanResults = [];
+                for (const line of lines) {
+                    // Kapsamlı temizleme
+                    let cleaned = line.trim();
+                    cleaned = cleaned.replace(/^["'\[\],\s]+|["'\[\],\s]+$/g, '');
+                    
+                    // Satır numaralarını temizle
+                    cleaned = cleaned.replace(/^\[\d+\]\s*:?\s*/, ''); // [123456]: 
+                    cleaned = cleaned.replace(/^\d+\]\s*:?\s*/, ''); // 123456]:
+                    cleaned = cleaned.replace(/^\d+:\s*/, ''); // 123456:
+                    
+                    // Geçersiz formatları filtrele
+                    if (!cleaned || cleaned.length === 0) continue;
+                    if (!cleaned.includes(':')) continue; // : içermeyenler
+                    if (cleaned.match(/^\d+/)) continue; // Sayı ile başlayanlar
+                    if (cleaned.includes('[') || cleaned.includes(']')) continue; // Köşeli parantez
+                    if (cleaned.match(/^https?$/)) continue; // Sadece protokol
+                    
+                    // Format kontrolü
+                    const parts = cleaned.split(':');
+                    let isValid = false;
+                    
+                    if (format === 'URL:PASS') {
+                        isValid = parts.length >= 2 && (parts[0].includes('.') || parts[0].startsWith('http'));
+                    } else if (format === 'MAIL:PASS') {
+                        isValid = parts.length >= 2 && parts[0].includes('@') && parts[0].includes('.');
+                    } else if (format === 'USERNAME:PASS' || format === 'USER:PASS') {
+                        isValid = parts.length >= 2 && !parts[0].includes('@') && !parts[0].includes('.');
+                    } else if (format === 'URL:MAIL:PASS') {
+                        isValid = parts.length >= 3;
+                    }
+                    
+                    if (isValid) {
+                        cleanResults.push(cleaned);
+                    }
+                }
+                
+                return cleanResults;
+                
+            } catch (parseError) {
+                console.error('AI response parse error:', parseError);
+                return [];
+            }
+        } else {
+            throw new Error(`API error: ${data.status}`);
+        }
+        
+    } catch (error) {
+        console.error('AI extraction error:', error);
+        throw error; // Re-throw to trigger fallback
+    }
+}
 
 // Performance optimization: Use Web Workers for large file processing
 function processLargeFileInWorker(content, callback) {
