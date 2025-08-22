@@ -170,16 +170,10 @@ function handleComboFileSelect(e) {
 
 // Process search files
 async function processSearchFiles(files) {
-    // Check total file size limit (5 GB = 5 * 1024 * 1024 * 1024 bytes)
-    const MAX_TOTAL_SIZE = 5 * 1024 * 1024 * 1024; // 5 GB
+    // Calculate total size for display
     let totalSize = 0;
     for (const file of files) {
         totalSize += file.size;
-    }
-
-    if (totalSize > MAX_TOTAL_SIZE) {
-        alert(`⚠️ Toplam dosya boyutu ${formatFileSize(totalSize)} olarak ${formatFileSize(MAX_TOTAL_SIZE)} sınırını aşıyor.\n\nLütfen daha küçük dosyalar seçin veya dosya sayısını azaltın.`);
-        return;
     }
 
     showLoadingWithProgress(`Dosyalar yükleniyor... (${formatFileSize(totalSize)})`);
@@ -209,8 +203,8 @@ async function processSearchFiles(files) {
                 const progress = Math.floor((processedFiles / totalFiles) * 100);
                 updateProgress(progress, processedFiles, totalFiles, `${formatFileSize(processedSize)} / ${formatFileSize(totalSize)}`);
                 
-                // Allow UI to update - longer delay for large files
-                const delay = file.size > 50 * 1024 * 1024 ? 50 : 10; // 50ms for files > 50MB
+                // Allow UI to update - adaptive delay based on file size
+                const delay = file.size > 100 * 1024 * 1024 ? 100 : file.size > 50 * 1024 * 1024 ? 50 : 10;
                 await new Promise(resolve => setTimeout(resolve, delay));
                 
             } catch (fileError) {
@@ -230,14 +224,6 @@ async function processSearchFiles(files) {
 
 // Process combo file
 async function processComboFile(file) {
-    // Check file size limit (5 GB)
-    const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5 GB
-    
-    if (file.size > MAX_FILE_SIZE) {
-        alert(`⚠️ Dosya boyutu ${formatFileSize(file.size)} olarak ${formatFileSize(MAX_FILE_SIZE)} sınırını aşıyor.\n\nLütfen daha küçük bir dosya seçin.`);
-        return;
-    }
-
     showLoading(`Combo dosyası yükleniyor... (${formatFileSize(file.size)})`);
     try {
         const content = await readFileContent(file);
