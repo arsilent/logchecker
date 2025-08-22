@@ -55,6 +55,8 @@ const clearSearchFilterBtn = document.getElementById('clearSearchFilterBtn');
 const searchFilteredCount = document.getElementById('searchFilteredCount');
 const searchFilteredNumber = document.getElementById('searchFilteredNumber');
 
+
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     initializeEventListeners();
@@ -864,6 +866,8 @@ function clearAllFiles() {
     // Reset file input
     searchFileInput.value = '';
 }
+
+
 
 // Performance optimization: Use Web Workers for large file processing
 function processLargeFileInWorker(content, callback) {
